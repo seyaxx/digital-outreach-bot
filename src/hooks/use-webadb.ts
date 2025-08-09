@@ -1,25 +1,29 @@
 import { useCallback, useMemo, useRef, useState } from "react";
-import { WebAdb } from "@/lib/adb/webadb";
+import { WebAdb, type WebAdbState } from "@/lib/adb/webadb";
 import { useToast } from "@/hooks/use-toast";
 
-export type UseWebAdbState = {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  adb: any | null;
-  model?: string;
-  serial?: string;
-  connected: boolean;
-  authorized: boolean;
+export interface UseWebAdbState extends WebAdbState {
   isBusy: boolean;
   lastError?: string;
-};
+  deviceInfo: string;
+}
 
 export function useWebAdb() {
   const { toast } = useToast();
   const [state, setState] = useState<UseWebAdbState>({
     adb: null,
-    connected: false,
+    device: null,
+    serial: undefined,
+    model: undefined,
+    manufacturer: undefined,
+    androidVersion: undefined,
+    sdk: undefined,
+    deviceName: undefined,
+    screenSize: undefined,
     authorized: false,
+    connected: false,
     isBusy: false,
+    deviceInfo: "Neconectat"
   });
 
   const busyRef = useRef(false);
@@ -33,18 +37,19 @@ export function useWebAdb() {
     try {
       setBusy(true);
       const res = await WebAdb.requestConnect();
-      setState({
-        adb: res.adb,
-        model: res.model,
-        serial: res.serial,
-        authorized: res.authorized ?? true,
-        connected: !!res.adb,
-        isBusy: false,
-      });
-      toast({ title: "Telefon conectat", description: `${res.model ?? "(necunoscut)"} • ${res.serial ?? ""}` });
+      const deviceInfo = `${res.model} (${res.manufacturer}) • Android ${res.androidVersion} • ${res.screenSize}`;
+      
+      setState(prev => ({
+        ...prev,
+        ...res,
+        deviceInfo,
+        isBusy: false
+      }));
+      
+      toast({ title: "Telefon conectat cu succes!", description: deviceInfo });
     } catch (e: any) {
       const msg = e?.message ?? String(e);
-      setState((s) => ({ ...s, lastError: msg }));
+      setState((s) => ({ ...s, lastError: msg, isBusy: false, connected: false, deviceInfo: "Eroare la conectare" }));
       toast({ title: "Eroare conectare", description: msg, variant: "destructive" });
     } finally {
       setBusy(false);
@@ -130,6 +135,17 @@ export function useWebAdb() {
     [state.adb]
   );
 
+  const sendSms = useCallback(async (number: string, message: string, dryRun = false): Promise<{ ok: boolean; error?: string }> => {
+    if (!state.adb) return { ok: false, error: "ADB nu este conectat" };
+    
+    try {
+      return await WebAdb.sendSms(state.adb, number, message, dryRun);
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : "Eroare necunoscută";
+      return { ok: false, error: errorMsg };
+    }
+  }, [state.adb]);
+
   const shell = useCallback(
     async (cmd: string) => {
       if (!state.adb) throw new Error("Nu există conexiune ADB");
@@ -138,17 +154,48 @@ export function useWebAdb() {
     [state.adb]
   );
 
+  const disconnect = useCallback(async () => {
+    if (state.adb) {
+      try {
+        await state.adb.close?.();
+      } catch (error) {
+        console.error("Error disconnecting:", error);
+      }
+    }
+    
+    setState({
+      adb: null,
+      device: null,
+      serial: undefined,
+      model: undefined,
+      manufacturer: undefined,
+      androidVersion: undefined,
+      sdk: undefined,
+      deviceName: undefined,
+      screenSize: undefined,
+      authorized: false,
+      connected: false,
+      isBusy: false,
+      lastError: undefined,
+      deviceInfo: "Deconectat"
+    });
+    
+    toast({ title: "Telefon deconectat" });
+  }, [state.adb, toast]);
+
   return useMemo(
     () => ({
       ...state,
       connect,
+      disconnect,
       installFromUrl,
       installFromFile,
       isPackageInstalled,
       grantPermission,
       checkSmsPermission,
+      sendSms,
       shell,
     }),
-    [state, connect, installFromUrl, installFromFile, isPackageInstalled, grantPermission, checkSmsPermission, shell]
+    [state, connect, disconnect, installFromUrl, installFromFile, isPackageInstalled, grantPermission, checkSmsPermission, sendSms, shell]
   );
 }
