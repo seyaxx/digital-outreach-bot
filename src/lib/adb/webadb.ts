@@ -3,21 +3,18 @@
 // Runtime errors will be surfaced via the caller and toasts.
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let DeviceManager: any;
+let DeviceManager: any = null;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-let AdbLib: any;
+let AdbLib: any = null;
 
-try {
-  // Dynamically import to avoid type mismatches across versions
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  AdbLib = await import("@yume-chan/adb");
-  // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-  // @ts-ignore
-  const webusb = await import("@yume-chan/adb-daemon-webusb");
-  DeviceManager = webusb.AdbDaemonWebUsbDeviceManager;
-} catch (e) {
-  // Fallback: leave undefined; callers should handle
+async function ensureDeps() {
+  if (!AdbLib) {
+    AdbLib = await import("@yume-chan/adb");
+  }
+  if (!DeviceManager) {
+    const webusb = await import("@yume-chan/adb-daemon-webusb");
+    DeviceManager = webusb.AdbDaemonWebUsbDeviceManager;
+  }
 }
 
 export type WebAdbState = {
@@ -28,7 +25,7 @@ export type WebAdbState = {
   authorized: boolean;
 };
 
-const manager = DeviceManager ? new DeviceManager() : null;
+// manager is created lazily in requestConnect()
 
 async function shell(adb: any, cmd: string): Promise<string> {
   if (!adb) throw new Error("ADB indisponibil");
@@ -53,10 +50,11 @@ async function shell(adb: any, cmd: string): Promise<string> {
 
 export const WebAdb = {
   async requestConnect(): Promise<WebAdbState> {
-    if (!manager || !AdbLib) throw new Error("WebUSB nu este suportat în acest browser");
+    await ensureDeps();
+    if (!(navigator as any).usb) throw new Error("WebUSB nu este suportat în acest browser");
+    const manager = new DeviceManager();
     const device = await manager.requestDevice();
     const transport = await device.connect();
-    // Newer versions expose `AdbLib.Adb.authenticate`, others `AdbLib.Adb.authenticate`
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const adb = (AdbLib.Adb?.authenticate
       ? await AdbLib.Adb.authenticate(transport)

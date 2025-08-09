@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { useBridgeHealth } from "@/hooks/use-bridge-health";
 import { useWebAdb } from "@/hooks/use-webadb";
 import {
-  Phone,
+  Phone as PhoneIcon,
   Upload,
   Play,
   Pause,
@@ -388,7 +388,7 @@ useEffect(() => {
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className={cn("flex items-center gap-2", wa.connected ? "text-foreground" : "text-muted-foreground")}>
-                <Phone className="h-4 w-4" /> {wa.connected ? `Conectat: ${wa.model ?? "(necunoscut)"} • ${wa.serial ?? ""}` : "Neconectat"}
+                <PhoneIcon className="h-4 w-4" /> {wa.connected ? `Conectat: ${wa.model ?? "(necunoscut)"} • ${wa.serial ?? ""}` : "Neconectat"}
               </div>
               <div className={cn("flex items-center gap-2", wa.connected ? (wa.authorized ? "text-foreground" : "text-destructive") : "text-muted-foreground")}>
                 <Bug className="h-4 w-4" /> USB debugging: {wa.connected ? (wa.authorized ? "autorizat" : "neautorizat – acceptă pe telefon") : "necunoscut"}
@@ -444,7 +444,7 @@ useEffect(() => {
                 <Server className="h-4 w-4" /> Bridge: {bridgeOnline ? "online" : "offline"}
               </div>
               <div className={cn("flex items-center gap-2", status?.connected ? "text-foreground" : "text-muted-foreground")}>
-                <Phone className="h-4 w-4" />
+                <PhoneIcon className="h-4 w-4" />
                 {statusLoading ? "Verific..." : status?.connected ? `USB conectat: ${status?.deviceModel ?? "(necunoscut)"}` : "USB neconectat"}
               </div>
               <div className={cn("flex items-center gap-2", status?.connected ? "text-foreground" : "text-muted-foreground")}>
