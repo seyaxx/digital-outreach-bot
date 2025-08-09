@@ -15,6 +15,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useBridgeHealth } from "@/hooks/use-bridge-health";
 import {
   Phone,
   Upload,
@@ -24,6 +25,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   FileText,
+  Server,
+  Bug,
 } from "lucide-react";
 
 const API_BASE = "http://localhost:8765";
@@ -62,6 +65,7 @@ const numberRegex = /^07\d{8}$/; // strict: 07xxxxxxxx
 const BulkSMS: React.FC = () => {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const { bridgeOnline, lastError, checkNow } = useBridgeHealth(API_BASE);
 
   useEffect(() => {
     document.title = "Bulk SMS Android USB | Fast & Reliable";
@@ -90,6 +94,7 @@ const BulkSMS: React.FC = () => {
       if (!res.ok) throw new Error("Nu pot obține statusul");
       return res.json();
     },
+    enabled: bridgeOnline,
     refetchInterval: 2000,
   });
 
@@ -100,7 +105,7 @@ const BulkSMS: React.FC = () => {
       if (!res.ok) return { lines: [] };
       return res.json();
     },
-    enabled: true,
+    enabled: bridgeOnline,
     refetchInterval: isSending ? 1500 : 4000,
   });
 
@@ -220,8 +225,15 @@ const BulkSMS: React.FC = () => {
   };
 
   const canStart = useMemo(() => {
-    return message.trim().length > 0 && numbers.length > 0 && ratePerMinute > 0;
-  }, [message, numbers, ratePerMinute]);
+    return (
+      message.trim().length > 0 &&
+      numbers.length > 0 &&
+      ratePerMinute > 0 &&
+      bridgeOnline &&
+      !!status?.connected &&
+      !!status?.permissions?.sendSms
+    );
+  }, [message, numbers, ratePerMinute, bridgeOnline, status]);
 
   return (
     <div>
@@ -310,6 +322,7 @@ const BulkSMS: React.FC = () => {
                 <div className="flex gap-2 md:col-span-2">
                   <Button
                     variant="secondary"
+                    disabled={!bridgeOnline || !status?.connected || testSend.isPending}
                     onClick={() => {
                       if (!numbers[0]) {
                         toast({ title: "Lipsește număr", description: "Încarcă cel puțin un număr valid." });
@@ -351,11 +364,17 @@ const BulkSMS: React.FC = () => {
               <CardDescription>Conectează prin USB, activează Debugging, apoi urmează pașii.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
-              <div className={cn("flex items-center gap-2", status?.connected ? "text-foreground" : "text-muted-foreground")}> 
-                <Phone className="h-4 w-4" />
-                {statusLoading ? "Verific..." : status?.connected ? `Conectat: ${status?.deviceModel ?? "(necunoscut)"}` : "Neconectat"}
+              <div className={cn("flex items-center gap-2", bridgeOnline ? "text-foreground" : "text-destructive")}> 
+                <Server className="h-4 w-4" /> Bridge: {bridgeOnline ? "online" : "offline"}
               </div>
-              <div className={cn("flex items-center gap-2", status?.apkInstalled ? "text-foreground" : "text-muted-foreground")}>
+              <div className={cn("flex items-center gap-2", status?.connected ? "text-foreground" : "text-muted-foreground")}>
+                <Phone className="h-4 w-4" />
+                {statusLoading ? "Verific..." : status?.connected ? `USB conectat: ${status?.deviceModel ?? "(necunoscut)"}` : "USB neconectat"}
+              </div>
+              <div className={cn("flex items-center gap-2", status?.connected ? "text-foreground" : "text-muted-foreground")}>
+                <Bug className="h-4 w-4" /> USB debugging: {status?.connected ? "activ (ADB)" : "inactiv"}
+              </div>
+              <div className={cn("flex items-center gap-2", status?.apkInstalled ? "text-foreground" : "text-muted-foreground")}> 
                 <FileText className="h-4 w-4" /> APK instalat: {status?.apkInstalled ? "da" : "nu"}
               </div>
               <div className={cn("flex items-center gap-2", status?.permissions?.sendSms ? "text-foreground" : "text-muted-foreground")}>
@@ -363,16 +382,16 @@ const BulkSMS: React.FC = () => {
               </div>
               <Separator className="my-2" />
               <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={() => ensureAdb.mutate()} disabled={ensureAdb.isPending}>
+                <Button variant="outline" onClick={() => ensureAdb.mutate()} disabled={!bridgeOnline || ensureAdb.isPending}>
                   Inițializează ADB
                 </Button>
-                <Button variant="outline" onClick={() => installApk.mutate()} disabled={installApk.isPending}>
+                <Button variant="outline" onClick={() => installApk.mutate()} disabled={!bridgeOnline || installApk.isPending}>
                   Instalează APK
                 </Button>
-                <Button variant="outline" onClick={() => grantPerms.mutate()} disabled={grantPerms.isPending}>
+                <Button variant="outline" onClick={() => grantPerms.mutate()} disabled={!bridgeOnline || grantPerms.isPending}>
                   Acordă permisiuni
                 </Button>
-                <Button variant="secondary" onClick={() => refetchStatus()}>Reverifică</Button>
+                <Button variant="secondary" onClick={() => { checkNow(); refetchStatus(); }}>Reverifică</Button>
               </div>
             </CardContent>
           </Card>
