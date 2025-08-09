@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useBridgeHealth } from "@/hooks/use-bridge-health";
+import { useWebAdb } from "@/hooks/use-webadb";
 import {
   Phone,
   Upload,
@@ -30,6 +31,7 @@ import {
 } from "lucide-react";
 
 const API_BASE = "http://localhost:8765";
+const HELPER_PKG = "com.lovable.bulkhelper";
 
 type PhoneStatus = {
   connected?: boolean;
@@ -80,8 +82,29 @@ const BulkSMS: React.FC = () => {
   const [invalidNumbers, setInvalidNumbers] = useState<string[]>([]);
   const [message, setMessage] = useState<string>("");
   const [ratePerMinute, setRatePerMinute] = useState<number>(20);
-  const [isSending, setIsSending] = useState<boolean>(false);
-  const validCount = numbers.length;
+const [isSending, setIsSending] = useState<boolean>(false);
+const validCount = numbers.length;
+
+// WebUSB (direct) ADB
+const wa = useWebAdb();
+const [apkInstalledUsb, setApkInstalledUsb] = useState<boolean | null>(null);
+const [permSmsUsb, setPermSmsUsb] = useState<boolean | null>(null);
+const [apkUrl, setApkUrl] = useState<string>("/apk/smshelper.apk");
+
+const recheckUsb = useCallback(async () => {
+  if (!wa.connected) return;
+  const [inst, perm] = await Promise.all([
+    wa.isPackageInstalled(HELPER_PKG),
+    wa.checkSmsPermission(HELPER_PKG),
+  ]);
+  setApkInstalledUsb(inst);
+  setPermSmsUsb(perm);
+}, [wa]);
+
+useEffect(() => {
+  if (!wa.connected) return;
+  void recheckUsb();
+}, [wa.connected, recheckUsb]);
 
   const {
     data: status,
@@ -358,6 +381,59 @@ const BulkSMS: React.FC = () => {
         </section>
 
         <aside className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Conectare directă USB (WebUSB)</CardTitle>
+              <CardDescription>Conectează fără bridge. Chrome/Edge pe desktop, site HTTPS.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className={cn("flex items-center gap-2", wa.connected ? "text-foreground" : "text-muted-foreground")}>
+                <Phone className="h-4 w-4" /> {wa.connected ? `Conectat: ${wa.model ?? "(necunoscut)"} • ${wa.serial ?? ""}` : "Neconectat"}
+              </div>
+              <div className={cn("flex items-center gap-2", wa.connected ? (wa.authorized ? "text-foreground" : "text-destructive") : "text-muted-foreground")}>
+                <Bug className="h-4 w-4" /> USB debugging: {wa.connected ? (wa.authorized ? "autorizat" : "neautorizat – acceptă pe telefon") : "necunoscut"}
+              </div>
+              {wa.lastError && <div className="text-destructive">{wa.lastError}</div>}
+              <Separator className="my-2" />
+              <div className="grid grid-cols-2 gap-2">
+                <Button onClick={() => wa.connect()} disabled={wa.isBusy}>{wa.isBusy ? "..." : "Conectează telefon (USB)"}</Button>
+                <Button variant="secondary" onClick={recheckUsb} disabled={!wa.connected || wa.isBusy}>Reverifică</Button>
+              </div>
+              <Separator className="my-2" />
+              <div className={cn("flex items-center gap-2", apkInstalledUsb ? "text-foreground" : "text-muted-foreground")}>
+                <FileText className="h-4 w-4" /> APK instalat: {apkInstalledUsb ? "da" : "nu"}
+              </div>
+              <div className={cn("flex items-center gap-2", permSmsUsb ? "text-foreground" : "text-muted-foreground")}>
+                <CheckCircle2 className="h-4 w-4" /> SEND_SMS: {permSmsUsb ? "da" : "nu"}
+              </div>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <Input
+                  placeholder="/apk/smshelper.apk"
+                  value={apkUrl}
+                  onChange={(e) => setApkUrl(e.target.value)}
+                />
+                <Button
+                  variant="outline"
+                  disabled={!wa.connected || wa.isBusy}
+                  onClick={async () => { try { await wa.installFromUrl(apkUrl); await recheckUsb(); } catch {} }}
+                >
+                  Instalează din URL
+                </Button>
+                <Input
+                  type="file"
+                  accept=".apk"
+                  onChange={async (e) => { const f = e.target.files?.[0]; if (f) { try { await wa.installFromFile(f); await recheckUsb(); } catch {} } }}
+                />
+                <Button
+                  variant="outline"
+                  disabled={!wa.connected || wa.isBusy}
+                  onClick={async () => { try { await wa.grantPermission(HELPER_PKG, "android.permission.SEND_SMS"); await recheckUsb(); } catch {} }}
+                >
+                  Acordă SEND_SMS
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
           <Card>
             <CardHeader>
               <CardTitle>Telefon & Permisiuni</CardTitle>
