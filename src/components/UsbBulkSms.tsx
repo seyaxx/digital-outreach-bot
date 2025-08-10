@@ -160,8 +160,8 @@ export default function UsbBulkSms() {
 
       // dacă interfața e „claimed” de alt proces sau alt tab, afișăm ghidul
       if (
-        /already.*in use|busy|open/i.test(msg) ||
-        /Access denied|failed to open/i.test(msg)
+        /already.*in use|busy|open|LIBUSB_ERROR_BUSY|resource busy|already open|ALREADY_OPEN|access is denied/i.test(msg) ||
+        /Access denied|failed to open|The device is already open/i.test(msg)
       ) {
         setBusyError(
           "Interfața ADB este folosită de alt program sau alt tab. Închide procesele ADB, emulatoare/WSA/scrcpy, închide alte tab-uri și reconectează."
@@ -175,6 +175,30 @@ export default function UsbBulkSms() {
     setAdb(null);
     setDevice(null);
     setStatus("Disconnected");
+  }
+
+  async function checkPhone() {
+    if (!adb) { addLog("Nu ești conectat la telefon."); return; }
+    setStatus("Rulez diagnostic pe telefon…");
+    try {
+      const [model, sdk, rel, size, holder, pkgMsg] = await Promise.all([
+        runShell(adb, "getprop ro.product.model"),
+        runShell(adb, "getprop ro.build.version.sdk"),
+        runShell(adb, "getprop ro.build.version.release"),
+        runShell(adb, "wm size | sed 's/^[^:]*: *//' "),
+        runShell(adb, "cmd role holders android.app.role.SMS").catch(async () => (await runShell(adb, "settings get secure sms_default_application")).trim()),
+        runShell(adb, "pm list packages com.google.android.apps.messaging"),
+      ]);
+      addLog(`Model: ${model.trim()}`);
+      addLog(`Android: ${rel.trim()} (SDK ${sdk.trim()})`);
+      addLog(`Screen: ${size.trim()}`);
+      addLog(`Role SMS holder: ${holder.trim()}`);
+      addLog(`Google Messages installed: ${/com.google.android.apps.messaging/.test(pkgMsg) ? "yes" : "no"}`);
+    } catch (e: any) {
+      addLog(`Diag ERROR: ${String(e?.message ?? e)}`);
+    } finally {
+      setStatus("Diagnostic completat");
+    }
   }
 
   async function sendOne(currentAdb: Adb, rawNumber: string, body: string) {
@@ -248,12 +272,20 @@ export default function UsbBulkSms() {
                   Conectează telefon (USB)
                 </button>
               ) : (
-                <button
-                  className="px-4 py-2 rounded-2xl shadow bg-neutral-200"
-                  onClick={disconnect}
-                >
-                  Deconectează
-                </button>
+                <>
+                  <button
+                    className="px-4 py-2 rounded-2xl shadow bg-neutral-200"
+                    onClick={disconnect}
+                  >
+                    Deconectează
+                  </button>
+                  <button
+                    className="px-4 py-2 rounded-2xl shadow bg-neutral-100"
+                    onClick={checkPhone}
+                  >
+                    Verifică telefon
+                  </button>
+                </>
               )}
               <label className="flex items-center gap-2 text-sm ml-2">
                 <input

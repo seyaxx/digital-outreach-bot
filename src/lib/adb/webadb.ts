@@ -27,6 +27,18 @@ function escapeForDoubleQuotes(value: string) {
   return value.replace(/[\\"$`]/g, (m) => `\\${m}`);
 }
 
+// Concatenate Uint8Array chunks (browser-safe, no Buffer)
+function concatBytes(chunks: Uint8Array[]): Uint8Array {
+  const size = chunks.reduce((a, c) => a + c.byteLength, 0);
+  const out = new Uint8Array(size);
+  let off = 0;
+  for (const c of chunks) {
+    out.set(c, off);
+    off += c.byteLength;
+  }
+  return out;
+}
+
 // Run a shell command and return combined stdout
 async function runShell(adb: Adb, cmd: string): Promise<string> {
   // Prefer shell protocol; Android 11+ supports it
@@ -39,12 +51,12 @@ async function runShell(adb: Adb, cmd: string): Promise<string> {
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        chunks.push(value);
+        if (value) chunks.push(value);
       }
     } finally {
       reader.releaseLock();
     }
-    return new TextDecoder().decode(Buffer.concat(chunks as any));
+    return new TextDecoder().decode(concatBytes(chunks));
   }
 
   const proc = await adb.subprocess.shellProtocol.spawn(cmd);
@@ -54,13 +66,13 @@ async function runShell(adb: Adb, cmd: string): Promise<string> {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      chunks.push(value);
+      if (value) chunks.push(value);
     }
   } finally {
     reader.releaseLock();
   }
   await proc.exited; // ensure finished
-  return new TextDecoder().decode(Buffer.concat(chunks as any));
+  return new TextDecoder().decode(concatBytes(chunks));
 }
 
 async function tapPercent(adb: Adb, px: number, py: number) {
